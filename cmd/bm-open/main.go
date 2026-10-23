@@ -2,6 +2,7 @@
 //
 //	bm-open serve        run the site (default)
 //	bm-open mock         run the backend stub for development (127.0.0.1:3399)
+//	bm-open stats        print opens and clicks per day (-days 7)
 //	bm-open -version     print the build version
 package main
 
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/eshret-nohurov/open.auramusic.pro/internal/mockbackend"
 	"github.com/eshret-nohurov/open.auramusic.pro/internal/preview"
 	"github.com/eshret-nohurov/open.auramusic.pro/internal/site"
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/stats"
 )
 
 // version is set at build time with -ldflags "-X main.version=…".
@@ -42,8 +45,10 @@ func main() {
 		err = serve(args)
 	case "mock":
 		err = mock(args)
+	case "stats":
+		err = report(args)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\nusage: bm-open [serve | mock | -version]\n", cmd)
+		fmt.Fprintf(os.Stderr, "unknown command %q\nusage: bm-open [serve | mock | stats | -version]\n", cmd)
 		os.Exit(2)
 	}
 	if err != nil {
@@ -79,7 +84,9 @@ func serve(args []string) error {
 		StaleMax:    cfg.StaleMax,
 	})
 
-	srv, err := site.New(site.Options{Config: cfg, Version: version, Logger: log, Previews: previews})
+	rec := stats.New(stats.Options{DataDir: cfg.DataDir, Logger: log, Cache: previews.TakeCounters})
+
+	srv, err := site.New(site.Options{Config: cfg, Version: version, Logger: log, Previews: previews, Stats: rec})
 	if err != nil {
 		return err
 	}
@@ -102,6 +109,7 @@ func serve(args []string) error {
 	go func() { errc <- hs.ListenAndServe() }()
 	log.Info("listening", "addr", cfg.ListenAddr, "mode", cfg.Mode, "version", version)
 	go probeBackend(client, log)
+	go rec.Run(ctx)
 
 	select {
 	case err := <-errc:
@@ -113,7 +121,9 @@ func serve(args []string) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	err = hs.Shutdown(shutdownCtx)
-	srv.Close()
+	if ferr := rec.Close(); ferr != nil {
+		log.Error("write stats", "err", ferr)
+	}
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -151,4 +161,23 @@ func mock(args []string) error {
 	log.Info("backend stub listening", "addr", *addr, "fixtures", *dir)
 	hs := &http.Server{Addr: *addr, Handler: mockbackend.New(os.DirFS(*dir), *token, log), ReadHeaderTimeout: 5 * time.Second}
 	return hs.ListenAndServe()
+}
+
+// report needs only DATA_DIR, so it works without a valid .env (no token).
+func report(args []string) error {
+	fl := flag.NewFlagSet("stats", flag.ExitOnError)
+	days := fl.Int("days", 7, "how many days back")
+	envFile := fl.String("env", ".env", "settings file with DATA_DIR")
+	fl.Parse(args)
+
+	dir := os.Getenv("DATA_DIR")
+	if dir == "" {
+		if file, err := config.ReadDotEnv(*envFile); err == nil {
+			dir = file["DATA_DIR"]
+		}
+	}
+	if dir == "" {
+		dir = "./data"
+	}
+	return stats.Report(os.Stdout, filepath.Join(dir, "stats.jsonl"), *days, time.Now())
 }

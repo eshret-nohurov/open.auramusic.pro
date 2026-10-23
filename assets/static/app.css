@@ -1,0 +1,137 @@
+@font-face{font-family:Jost;font-weight:400;font-style:normal;font-display:swap;src:url("/static/fonts/jost-regular.woff") format("woff")}
+@font-face{font-family:Jost;font-weight:500;font-style:normal;font-display:swap;src:url("/static/fonts/jost-medium.woff") format("woff")}
+@font-face{font-family:Jost;font-weight:600;font-style:normal;font-display:swap;src:url("/static/fonts/jost-semibold.woff") format("woff")}
+
+:root{
+  --bg:#121212;
+  --red:#ea3d3d;
+  --red-button:#d32f2f;
+  --red-button-hover:#b92828;
+  --red-deep:#3b1517;
+  --text:#f5f2f2;
+  --muted:#a8a1a1;
+  --radius-md:16px;
+  --gutter:clamp(16px,5vw,64px);
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;background:var(--bg)}
+body{
+  margin:0;min-height:100vh;min-height:100dvh;
+  color:var(--text);
+  font:400 16px/1.5 Jost,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+p,h1{margin:0}
+a{color:inherit}
+img{display:block}
+
+.backdrop{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:linear-gradient(180deg,rgba(18,18,18,.55) 0%,rgba(18,18,18,.85) 55%,#121212 100%);
+}
+body:not(:has(.backdrop))::before{
+  background:linear-gradient(180deg,var(--red-deep) 0%,rgba(59,21,23,.35) 35%,rgba(18,18,18,0) 70%);
+}
+
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+
+.shell{
+  display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;
+  padding:max(16px,env(safe-area-inset-top)) max(var(--gutter),env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(var(--gutter),env(safe-area-inset-left));
+}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:8px;min-height:48px;text-decoration:none;border-radius:8px}
+.brand-mark{width:30px;height:auto}
+.brand-text{width:100px;height:auto}
+.langs{display:flex;gap:4px}
+.langs a{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:44px;min-height:36px;padding:0 12px;border-radius:999px;
+  font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  text-decoration:none;color:var(--muted);background:rgba(255,255,255,.08);
+}
+.langs a:hover{color:var(--text)}
+.langs a[aria-current="true"]{background:var(--text);color:var(--bg)}
+
+.card{
+  flex:1;width:100%;max-width:880px;margin:0 auto;padding:24px 0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+}
+.art{
+  position:relative;width:280px;max-width:72vw;aspect-ratio:1;flex:none;
+  border-radius:16px;overflow:hidden;background:#1F1F1F;
+  box-shadow:0 16px 48px rgba(0,0,0,.5);
+  animation:art-in .3s ease-out both;
+}
+.art-circle{border-radius:50%}
+.art-wide{width:320px;aspect-ratio:16/9}
+.art-img{width:100%;height:100%;object-fit:cover}
+.art-empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#1F1F1F}
+.art-empty img{width:40%;height:auto;opacity:.4}
+@keyframes art-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.art{animation:none}}
+
+.info{width:100%;min-width:0;margin-top:24px;display:flex;flex-direction:column;align-items:center}
+.kind{font-size:13px;font-weight:600;line-height:18px;color:var(--red);text-transform:uppercase;letter-spacing:.06em}
+.title{
+  margin-top:4px;font-size:26px;line-height:32px;font-weight:600;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;
+}
+.artist{
+  margin-top:4px;font-size:17px;line-height:24px;color:var(--muted);overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;
+}
+.message{margin-top:12px;color:var(--muted);overflow-wrap:anywhere}
+
+.actions{display:none;width:100%;margin-top:28px;flex-direction:column;align-items:center;gap:12px}
+body[data-platform="ios"] .for-ios,
+body[data-platform="android"] .for-android,
+body[data-platform="desktop"] .for-desktop{display:flex}
+
+.button{
+  display:flex;align-items:center;justify-content:center;width:100%;max-width:320px;
+  min-height:52px;padding:0 24px;border-radius:var(--radius-md);
+  background:var(--red-button);color:#fff;font-size:17px;font-weight:600;text-decoration:none;
+}
+.button:hover{background:var(--red-button-hover)}
+.badge{
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  min-height:52px;padding:0 20px;border-radius:12px;
+  background:#000;color:#fff;border:1px solid #3a3838;text-decoration:none;
+}
+.badge:hover{border-color:#6a6666}
+.badge-label{font-size:19px;font-weight:500;line-height:1.1;text-align:left}
+.badge-label small{display:block;font-size:11px;font-weight:400;color:#cfcaca}
+.badges{display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
+.desktop-apps{color:var(--muted)}
+
+.qr{display:flex;flex-direction:column;align-items:center;gap:16px}
+.qr-code{width:160px;height:160px;padding:12px;box-sizing:content-box;background:#fff;border-radius:16px}
+.qr-text{color:var(--muted);font-size:15px;line-height:22px}
+.qr-title{color:var(--text);font-size:17px;font-weight:600}
+
+.foot{padding-top:16px;text-align:center;font-size:13px;line-height:20px;color:var(--muted)}
+.foot a{text-decoration:none}
+.foot a:hover{text-decoration:underline}
+
+a:focus-visible{outline:2px solid #fff;outline-offset:3px}
+
+@media (min-width:900px){
+  body[data-platform="desktop"] .card{
+    display:grid;grid-template-columns:320px minmax(0,1fr);column-gap:56px;
+    align-items:center;justify-content:stretch;text-align:left;
+  }
+  body[data-platform="desktop"] .art,
+  body[data-platform="desktop"] .art-wide{width:320px;max-width:none}
+  body[data-platform="desktop"] .info{margin-top:0;align-items:flex-start}
+  body[data-platform="desktop"] .title{font-size:36px;line-height:42px}
+  body[data-platform="desktop"] .actions{align-items:flex-start}
+  body[data-platform="desktop"] .badges{justify-content:flex-start}
+  body[data-platform="desktop"] .qr{flex-direction:row;gap:24px}
+}
+@media (max-width:359px){
+  .brand-text{width:84px}
+  .title{font-size:24px;line-height:30px}
+}

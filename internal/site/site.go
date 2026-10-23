@@ -13,9 +13,14 @@ import (
 	"path"
 	"strconv"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/eshret-nohurov/open.auramusic.pro/assets"
 	"github.com/eshret-nohurov/open.auramusic.pro/internal/config"
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/imaging"
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/lru"
 	"github.com/eshret-nohurov/open.auramusic.pro/internal/preview"
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/stats"
 )
 
 type Options struct {
@@ -23,23 +28,54 @@ type Options struct {
 	Version  string
 	Logger   *slog.Logger
 	Previews *preview.Store
+	Stats    *stats.Recorder
 }
 
 type Server struct {
 	cfg       config.Config
 	version   string
 	previews  *preview.Store
+	stats     *stats.Recorder
 	log       *slog.Logger
 	static    *staticSet
 	wellknown map[string][]byte
 	tmpl      *template.Template
 	mux       *http.ServeMux
+
+	fetch     *imaging.Fetcher
+	render    *imaging.Renderer
+	images    *lru.Cache[string, []byte]
+	renders   singleflight.Group
+	downloads singleflight.Group
+	// fallback pictures for codes whose preview the backend failed to give.
+	fallback map[imageKind][]byte
 }
 
 func New(o Options) (*Server, error) {
-	s := &Server{cfg: o.Config, version: o.Version, log: o.Logger, previews: o.Previews}
+	s := &Server{cfg: o.Config, version: o.Version, log: o.Logger, previews: o.Previews, stats: o.Stats}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
+	}
+	if s.stats == nil {
+		s.stats = stats.New(stats.Options{DataDir: o.Config.DataDir, Logger: s.log})
+	}
+
+	var err error
+	if s.render, err = imaging.NewRenderer(); err != nil {
+		return nil, err
+	}
+	s.fetch = imaging.NewFetcher(imaging.FetchOptions{
+		Hosts:     o.Config.ImageHosts,
+		AllowHTTP: o.Config.AllowHTTPImages,
+		Logger:    s.log,
+	})
+	s.images = lru.New[string, []byte](o.Config.ImageCacheBytes, func(b []byte) int64 { return int64(len(b)) })
+	s.fallback = map[imageKind][]byte{kindOG: s.render.DefaultCard()}
+	if s.fallback[kindCover], err = s.render.Cover(nil, imaging.Square); err != nil {
+		return nil, err
+	}
+	if s.fallback[kindBg], err = s.render.Background(nil, imaging.Square); err != nil {
+		return nil, err
 	}
 
 	staticFS, err := fs.Sub(assets.FS, "static")
@@ -84,6 +120,19 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /apple-touch-icon.png", s.static.serveFixed("brand/icon.png"))
 	m.HandleFunc("GET /static/", s.static.serveHashed)
 	m.HandleFunc("GET /healthz", s.serveHealth)
+
+	m.HandleFunc("GET /{$}", s.serveRoot)
+	// /s/{code}/ is accepted as the apps accept it; without {$} the second
+	// pattern would also take /s/{code}/anything.
+	m.HandleFunc("GET /s/{code}", s.servePage)
+	m.HandleFunc("GET /s/{code}/{$}", s.servePage)
+	m.HandleFunc("GET /i/{code}/{file}", s.serveImage)
+	m.HandleFunc("GET /qr/{file}", s.serveQR)
+	m.Handle("POST /e", s.stats.Beacon(s.cfg.TrustProxy))
+	m.HandleFunc("/e", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	})
 
 	m.HandleFunc("/", s.serveFallback)
 	s.mux = m
@@ -182,10 +231,3 @@ func (s *Server) serveFallback(w http.ResponseWriter, r *http.Request) {
 	}
 	s.serveNotFound(w, r)
 }
-
-func (s *Server) serveNotFound(w http.ResponseWriter, r *http.Request) {
-	s.writeHTML(w, http.StatusNotFound, "private, no-cache", "notfound.html", struct{ Lang string }{"tk"})
-}
-
-// Close finishes background work after the HTTP server has stopped.
-func (s *Server) Close() {}

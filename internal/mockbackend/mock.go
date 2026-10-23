@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -108,6 +109,16 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, code string) int
 }
 
 func (s *Server) load(code string) (map[string]any, error) {
+	// Codes are case-sensitive but the macOS file system is not, so a
+	// lower-cased code would otherwise find another code's fixture.
+	// fs.Glob would not help: without wildcards it only calls Stat.
+	entries, err := fs.ReadDir(s.fixtures, ".")
+	if err != nil {
+		return nil, err
+	}
+	if !slices.ContainsFunc(entries, func(e fs.DirEntry) bool { return e.Name() == code+".json" }) {
+		return nil, fs.ErrNotExist
+	}
 	b, err := fs.ReadFile(s.fixtures, code+".json")
 	if err != nil {
 		return nil, err

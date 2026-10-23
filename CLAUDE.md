@@ -23,7 +23,7 @@ make build-linux   # dist/bm-open для сервера
 ## Структура
 
 ```
-cmd/bm-open/          входная точка: serve (по умолчанию), mock, -version
+cmd/bm-open/          входная точка: serve (по умолчанию), mock, stats -days N, -version
 internal/config/      env и .env (окружение главнее файла), проверка обязательных полей
 internal/sharecode/   проверка кода: ровно 16 символов [0-9A-Za-z]
 internal/lang/        язык страницы: tm/ru, разбор Accept-Language
@@ -31,9 +31,13 @@ internal/backend/     клиент internal/deeplink: без повторов и
 internal/preview/     кэш превью: TTL по исходу, один запрос на код (singleflight), устаревшее при сбое
 internal/lru/         LRU с ограничением по «весу» (записи или байты)
 internal/mockbackend/ заглушка бэкенда: фикстуры testdata/mock/{code}.json, сгенерированные обложки
-internal/site/        HTTP: маршруты, заголовки безопасности, статика с хешем в имени, файлы связки
-assets/               всё, что вшито в бинарник (embed.go): static/, templates/, wellknown/, fonts-ttf/
+internal/imaging/     обложка, фон, карточка 1200×630, QR; скачивание обложек только с IMAGE_HOSTS
+internal/stats/       счётчики по часам в DATA_DIR/stats.jsonl, маяк POST /e, отчёт для команды stats
+internal/site/        HTTP: страница /s/{code} (page.go), картинки и QR (images.go), тексты tm/ru (texts.go),
+                      платформа и боты по UA (agent.go), статика с хешем в имени, файлы связки
+assets/               всё, что вшито в бинарник (embed.go): static/, templates/, wellknown/, fonts-ttf/, raster/
 testdata/mock/        фикстуры заглушки: имя файла = код; ключи "_status" и "_delay" управляют ответом
+testdata/out/         карточки для проверки глазами: IMAGING_OUT=1 go test -run WriteCards ./internal/imaging/
 deploy/               pm2, nginx, release.sh
 ```
 

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="{{.Lang.HTML}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{.Meta.Title}}</title>
+<meta name="description" content="{{.Meta.Description}}">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#121212">
+<meta name="color-scheme" content="dark">
+<meta name="apple-itunes-app" content="{{.Meta.AppleApp}}">
+<meta property="og:site_name" content="Belet Music">
+<meta property="og:type" content="{{.Meta.OGType}}">
+<meta property="og:title" content="{{.Meta.OGTitle}}">
+<meta property="og:description" content="{{.Meta.Description}}">
+{{- with .Meta.URL}}
+<meta property="og:url" content="{{.}}">
+{{- end}}
+<meta property="og:image" content="{{.Meta.Image}}">
+<meta property="og:image:type" content="{{.Meta.ImageType}}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{.Meta.ImageAlt}}">
+<meta property="og:locale" content="{{.Lang.OGLocale}}">
+<meta property="og:locale:alternate" content="{{.Lang.Other.OGLocale}}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{.Meta.OGTitle}}">
+<meta name="twitter:description" content="{{.Meta.Description}}">
+<meta name="twitter:image" content="{{.Meta.Image}}">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="{{static "fonts/jost-semibold.woff"}}" as="font" type="font/woff" crossorigin>
+<link rel="stylesheet" href="{{static "app.css"}}">
+<script src="{{static "app.js"}}" defer></script>
+</head>
+<body data-platform="{{.Platform}}" data-state="{{.State}}" data-type="{{.Type}}">
+{{- with .Backdrop}}
+<img class="backdrop" src="{{.}}" alt="" aria-hidden="true" decoding="async">
+{{- end}}
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="{{.MainSite}}">
+      <img class="brand-mark" src="{{static "brand/logo-mark.svg"}}" alt="" width="52" height="51">
+      <img class="brand-text" src="{{static "brand/logo-text.svg"}}" alt="Belet Music" width="100" height="14">
+    </a>
+    <nav class="langs" aria-label="{{.T.LangLabel}}">
+      {{- range .Langs}}
+      <a href="{{.Href}}" hreflang="{{.HTMLLang}}" lang="{{.HTMLLang}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>
+      {{- end}}
+    </nav>
+  </header>
+
+  <main class="card">
+    <div class="art art-{{.Shape}}">
+      {{- with .Cover}}
+      <img class="art-img" src="{{.URL}}" width="{{.W}}" height="{{.H}}" alt="{{$.Title}}" fetchpriority="high" decoding="async">
+      {{- else}}
+      <div class="art-empty"><img src="{{static "brand/logo-mark-mono.svg"}}" alt="" width="96" height="96"></div>
+      {{- end}}
+    </div>
+
+    <div class="info">
+      {{- with .TypeLabel}}
+      <p class="kind">{{.}}</p>
+      {{- end}}
+      <h1 class="title">{{.Title}}</h1>
+      {{- with .Artist}}
+      <p class="artist">{{.}}</p>
+      {{- end}}
+      {{- with .Message}}
+      <p class="message">{{.}}</p>
+      {{- end}}
+
+      <div class="actions for-ios">
+        {{template "badge-apple" .}}
+      </div>
+
+      <div class="actions for-android">
+        {{- with .OpenApp}}
+        <a class="button" href="{{.}}" data-ev="open_app">{{$.T.OpenInApp}}</a>
+        {{- end}}
+        {{template "badge-google" .}}
+      </div>
+
+      <div class="actions for-desktop">
+        {{- with .QR}}
+        <div class="qr">
+          <img class="qr-code" src="{{.}}" width="160" height="160" alt="{{$.T.QRAlt}}" loading="lazy">
+          <div class="qr-text">
+            <p class="qr-title">{{$.T.QRTitle}}</p>
+            <p>{{$.T.QRText}}</p>
+          </div>
+        </div>
+        {{- else}}
+        <p class="desktop-apps">{{.T.DesktopApps}}</p>
+        {{- end}}
+        <div class="badges">
+          {{template "badge-apple" .}}
+          {{template "badge-google" .}}
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <a href="{{.MainSite}}">auramusic.pro</a> · © Sanly Tilsimat
+  </footer>
+</div>
+
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-apple" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M16.36 12.86c-.02-2.06 1.68-3.05 1.76-3.1-0.96-1.4-2.46-1.6-2.99-1.62-1.27-.13-2.49.75-3.13.75-.65 0-1.64-.73-2.7-.71-1.39.02-2.67.81-3.39 2.05-1.45 2.51-.37 6.23 1.04 8.27.69 1 1.51 2.12 2.58 2.08 1.04-.04 1.43-.67 2.69-.67 1.25 0 1.6.67 2.7.65 1.11-.02 1.82-1.02 2.5-2.02.79-1.16 1.11-2.28 1.13-2.34-.02-.01-2.17-.83-2.2-3.29zM14.3 6.88c.57-.69.95-1.65.85-2.6-.82.03-1.81.54-2.4 1.23-.53.61-.99 1.58-.87 2.51.91.07 1.85-.46 2.42-1.14z"/>
+  </symbol>
+  <symbol id="i-play" viewBox="0 0 24 24">
+    <path fill="#00D3FF" d="M3.6 2.3c-.25.27-.4.69-.4 1.23v16.94c0 .54.15.96.4 1.23l.06.05L13.2 12.1v-.2L3.66 2.25l-.06.05z"/>
+    <path fill="#FFCE00" d="m16.4 15.3-3.2-3.2v-.2l3.2-3.2.07.04 3.79 2.15c1.08.61 1.08 1.62 0 2.24l-3.79 2.15-.07.05z"/>
+    <path fill="#FF3C4D" d="m16.47 15.25-3.27-3.25-9.6 9.6c.36.38.94.42 1.6.05l11.27-6.4z"/>
+    <path fill="#00F076" d="M16.47 8.75 5.2 2.35c-.66-.37-1.24-.33-1.6.05l9.6 9.6 3.27-3.25z"/>
+  </symbol>
+</svg>
+</body>
+</html>
+
+{{define "badge-apple"}}<a class="badge" href="{{.AppStore}}" target="_blank" rel="noopener noreferrer" data-ev="app_store">
+          <svg width="22" height="22" aria-hidden="true"><use href="#i-apple"/></svg>
+          <span class="badge-label"><small>{{.T.StoreAppleTop}}</small>App Store</span>
+        </a>{{end}}
+
+{{define "badge-google"}}<a class="badge" href="{{.Play}}" target="_blank" rel="noopener noreferrer" data-ev="google_play">
+          <svg width="20" height="22" aria-hidden="true"><use href="#i-play"/></svg>
+          <span class="badge-label"><small>{{.T.StoreGoogleTop}}</small>Google Play</span>
+        </a>{{end}}

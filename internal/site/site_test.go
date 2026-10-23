@@ -1,34 +1,79 @@
 package site
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/backend"
 	"github.com/eshret-nohurov/open.auramusic.pro/internal/config"
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/mockbackend"
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/preview"
 )
 
-func newTestServer(t *testing.T) *Server {
+const testToken = "SITE-TOKEN-must-not-leak-5c1e"
+
+type testEnv struct {
+	*Server
+	mock *mockbackend.Server
+	logs *syncBuf
+}
+
+type syncBuf struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuf) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+func (b *syncBuf) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.buf.String() }
+
+// newTestServer runs the site against the backend stub with its fixtures,
+// in mock mode, with a recognisable token and every log line captured.
+func newTestServer(t *testing.T) *testEnv {
 	t.Helper()
-	cfg, err := config.Parse(func(k string) (string, bool) {
-		if k == "MODE" {
-			return "mock", true
-		}
-		return "", false
+	m := mockbackend.New(os.DirFS("../../testdata/mock"), testToken, nil)
+	ts := httptest.NewServer(m)
+	t.Cleanup(ts.Close)
+
+	env := map[string]string{
+		"MODE":             "mock",
+		"BACKEND_BASE_URL": ts.URL,
+		"SITE_TOKEN":       testToken,
+		"IMAGE_HOSTS":      strings.TrimPrefix(ts.URL, "http://"),
+		"BACKEND_TIMEOUT":  "1s",
+		"DATA_DIR":         t.TempDir(),
+	}
+	cfg, err := config.Parse(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := &syncBuf{}
+	log := slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	client := backend.New(backend.Options{
+		BaseURL: cfg.BackendBaseURL, Token: cfg.SiteToken, Version: "test",
+		Timeout: cfg.BackendTimeout, MaxInflight: cfg.BackendMaxInflight, Logger: log,
 	})
+	previews := preview.New(preview.Options{
+		Fetcher: client, FoundTTL: cfg.PreviewTTL, NotFoundTTL: cfg.NotFoundTTL, FailTTL: cfg.FailTTL, StaleMax: cfg.StaleMax,
+	})
+	s, err := New(Options{Config: cfg, Version: "test", Logger: log, Previews: previews})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := New(Options{Config: cfg, Version: "test"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	return &testEnv{Server: s, mock: m, logs: logs}
 }
 
 func do(t *testing.T, h http.Handler, method, target string, hdr ...string) *http.Response {
