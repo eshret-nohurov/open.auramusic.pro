@@ -4,5 +4,5 @@ package assets
 
 import "embed"
 
-//go:embed static templates wellknown fonts-ttf
+//go:embed static templates wellknown fonts-ttf raster/*.png
 var FS embed.FS
