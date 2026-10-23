@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "GSPTVX7P4B.tm.com.sanlytilsimat.musicapp",
+          "GSPTVX7P4B.tm.com.sanlytilsimat.musicapp.dev"
+        ],
+        "components": [
+          { "/": "/s/*", "comment": "Share links: /s/{16-char code}" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.sanlytilsimat.musicapp",
+      "sha256_cert_fingerprints": [
+        "40:3B:18:EF:BD:56:C2:07:0B:A6:87:16:7D:B5:C4:60:41:92:1A:62:CB:45:F9:20:0B:B4:84:B1:62:B0:6A:CE",
+        "2E:AF:0E:6E:AB:F4:63:65:33:E1:66:D0:B7:E4:E4:8E:A6:55:FD:2B:C7:F6:53:37:3A:C9:D2:D1:1C:F7:FC:BC"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.sanlytilsimat.musicapp.dev.debug",
+      "sha256_cert_fingerprints": [
+        "30:CA:6F:13:C0:67:D0:DF:83:43:73:E6:D4:D0:58:68:5B:C7:49:93:F8:10:4E:C7:F8:40:02:88:9D:BA:02:46"
+      ]
+    }
+  }
+]

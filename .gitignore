@@ -1,0 +1,18 @@
+# settings with secrets: only .env.example is tracked
+.env
+.env.*
+!.env.example
+
+# build output
+/bin/
+/dist/
+
+# server layout (deploy/release.sh)
+/releases/
+/live
+/data/
+
+# rendered cards for a visual check, not tracked
+/testdata/out/
+
+.DS_Store
