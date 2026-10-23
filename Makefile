@@ -1,5 +1,6 @@
 VERSION := $(shell git describe --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
+ARCH ?= amd64
 
 .PHONY: dev test lint build build-linux
 
@@ -21,5 +22,6 @@ lint:
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/bm-open ./cmd/bm-open
 
+# For a server without Go: make build-linux ARCH=arm64 if uname -m says aarch64.
 build-linux:
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/bm-open ./cmd/bm-open
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/bm-open ./cmd/bm-open
