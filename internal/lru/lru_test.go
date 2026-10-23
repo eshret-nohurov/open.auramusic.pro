@@ -39,3 +39,14 @@ func TestCostBound(t *testing.T) {
 		t.Errorf("replace did not update cost: %d", c.Used())
 	}
 }
+
+func TestDelete(t *testing.T) {
+	c := New[string, int](10, func(int) int64 { return 3 })
+	c.Put("a", 1)
+	c.Put("b", 2)
+	c.Delete("a")
+	c.Delete("missing")
+	if _, ok := c.Peek("a"); ok || c.Len() != 1 || c.Used() != 3 {
+		t.Errorf("after Delete: len %d used %d", c.Len(), c.Used())
+	}
+}

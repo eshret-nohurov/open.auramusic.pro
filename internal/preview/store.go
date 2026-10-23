@@ -46,9 +46,14 @@ type Options struct {
 }
 
 type Store struct {
-	o       Options
-	entries *lru.Cache[string, entry]
-	group   singleflight.Group
+	o Options
+	// entries holds answers worth keeping: found previews, and failures
+	// that still carry one to serve stale. negative holds "not found" and
+	// plain failures. Apart, a flood of random codes cannot push out the
+	// previews that stale serving depends on.
+	entries  *lru.Cache[string, entry]
+	negative *lru.Cache[string, entry]
+	group    singleflight.Group
 
 	hits, misses, failures atomic.Int64
 }
@@ -70,14 +75,41 @@ func New(o Options) *Store {
 	if o.MaxEntries == 0 {
 		o.MaxEntries = 50_000
 	}
-	return &Store{o: o, entries: lru.New[string, entry](o.MaxEntries, nil)}
+	return &Store{
+		o:        o,
+		entries:  lru.New[string, entry](o.MaxEntries, nil),
+		negative: lru.New[string, entry](max(o.MaxEntries/5, 1), nil),
+	}
+}
+
+func (s *Store) lookup(code string, peek bool) (entry, bool) {
+	get, getNeg := s.entries.Get, s.negative.Get
+	if peek {
+		get, getNeg = s.entries.Peek, s.negative.Peek
+	}
+	if e, ok := get(code); ok {
+		return e, true
+	}
+	return getNeg(code)
+}
+
+// put keeps a code in exactly one of the two caches, so a revoked code's old
+// preview cannot outlive its "not found".
+func (s *Store) put(code string, e entry) {
+	if e.goodAt.IsZero() {
+		s.entries.Delete(code)
+		s.negative.Put(code, e)
+		return
+	}
+	s.negative.Delete(code)
+	s.entries.Put(code, e)
 }
 
 // Get never returns an error: a failure is an outcome the page shows. The
 // caller must have validated the code.
 func (s *Store) Get(code string) Result {
 	now := s.o.Now()
-	if e, ok := s.entries.Get(code); ok && now.Before(e.expires) {
+	if e, ok := s.lookup(code, false); ok && now.Before(e.expires) {
 		s.hits.Add(1)
 		return e.result(now, s.o.StaleMax)
 	}
@@ -86,7 +118,7 @@ func (s *Store) Get(code string) Result {
 		// A flight that finished between our lookup and Do already stored
 		// a fresh entry; asking the backend again would double the load.
 		now := s.o.Now()
-		if e, ok := s.entries.Peek(code); ok && now.Before(e.expires) {
+		if e, ok := s.lookup(code, true); ok && now.Before(e.expires) {
 			return e.result(now, s.o.StaleMax), nil
 		}
 		return s.refresh(code), nil
@@ -114,7 +146,7 @@ func (s *Store) refresh(code string) Result {
 			e.preview, e.goodAt = prev.preview, prev.goodAt
 		}
 	}
-	s.entries.Put(code, e)
+	s.put(code, e)
 	return e.result(now, s.o.StaleMax)
 }
 

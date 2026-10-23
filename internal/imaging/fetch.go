@@ -58,7 +58,9 @@ func NewFetcher(o FetchOptions) *Fetcher {
 		o.MaxBytes = 15 << 20
 	}
 	if o.MaxDim == 0 {
-		o.MaxDim = 6000
+		// Covers on the CDN are about 1000 px. 3000 px still leaves room and
+		// keeps one decoded 16-bit PNG under 72 MB.
+		o.MaxDim = 3000
 	}
 	log := o.Logger
 	if log == nil {
@@ -82,6 +84,7 @@ func NewFetcher(o FetchOptions) *Fetcher {
 			DialContext:            (&net.Dialer{Timeout: o.Timeout}).DialContext,
 			ForceAttemptHTTP2:      true,
 			MaxIdleConnsPerHost:    8,
+			MaxConnsPerHost:        8,
 			IdleConnTimeout:        90 * time.Second,
 			TLSHandshakeTimeout:    o.Timeout,
 			MaxResponseHeaderBytes: 16 << 10,

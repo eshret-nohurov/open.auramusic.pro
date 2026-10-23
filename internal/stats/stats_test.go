@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +35,35 @@ func (c *clock) Add(d time.Duration) {
 	c.mu.Unlock()
 }
 
+func (c *clock) Set(t time.Time) {
+	c.mu.Lock()
+	c.t = t
+	c.mu.Unlock()
+}
+
+// cacheSource behaves like preview.Store.TakeCounters: every take returns
+// what was counted since the previous one and starts again from zero.
+type cacheSource struct {
+	mu sync.Mutex
+	c  preview.Counters
+}
+
+func (s *cacheSource) add(hits, misses, failures int64) {
+	s.mu.Lock()
+	s.c.Hits += hits
+	s.c.Misses += misses
+	s.c.Failures += failures
+	s.mu.Unlock()
+}
+
+func (s *cacheSource) take() preview.Counters {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.c
+	s.c = preview.Counters{}
+	return c
+}
+
 func newClock() *clock { return &clock{t: time.Date(2026, 10, 21, 14, 5, 0, 0, time.UTC)} }
 
 func lines(t *testing.T, dir string) []string {
@@ -51,8 +81,8 @@ func lines(t *testing.T, dir string) []string {
 func TestFlushHourRolloverAndShape(t *testing.T) {
 	dir := t.TempDir()
 	c := newClock()
-	r := New(Options{DataDir: filepath.Join(dir, "sub"), Now: c.Now,
-		Cache: func() preview.Counters { return preview.Counters{Hits: 10, Misses: 3} }})
+	cache := &cacheSource{}
+	r := New(Options{DataDir: filepath.Join(dir, "sub"), Now: c.Now, Cache: cache.take})
 
 	r.View("track", "ios", "tm")
 	r.View("track", "ios", "tm")
@@ -61,8 +91,14 @@ func TestFlushHourRolloverAndShape(t *testing.T) {
 	r.BotView("telegram")
 	r.Click("app_store", "track", "ios")
 
-	if err := r.flush(false); err != nil {
-		t.Fatal(err)
+	// Several minute ticks within hour 14: each take resets the source, so
+	// the line must carry the sum of all of them, not the last one.
+	for _, n := range [][3]int64{{4, 1, 0}, {0, 0, 0}, {6, 2, 0}} {
+		cache.add(n[0], n[1], n[2])
+		c.Add(time.Minute)
+		if err := r.flush(false); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if got := lines(t, filepath.Join(dir, "sub")); got != nil {
 		t.Fatalf("running hour must not be written, got %v", got)
@@ -70,6 +106,7 @@ func TestFlushHourRolloverAndShape(t *testing.T) {
 
 	c.Add(time.Hour)
 	r.View("album", "desktop", "ru") // belongs to hour 15
+	cache.add(5, 0, 0)               // taken after hour 15 began: belongs to it
 	if err := r.flush(false); err != nil {
 		t.Fatal(err)
 	}
@@ -83,18 +120,56 @@ func TestFlushHourRolloverAndShape(t *testing.T) {
 	c.Add(time.Hour)
 	c.Add(time.Hour)
 	r.flush(false)
-	if got := lines(t, filepath.Join(dir, "sub")); len(got) != 2 {
-		t.Fatalf("want 2 lines, got %v", got)
+	got = lines(t, filepath.Join(dir, "sub"))
+	want = `{"hour":"2026-10-21T15","view":{"album.desktop.ru":1},"cache":{"hits":5,"misses":0,"failures":0}}`
+	if len(got) != 2 || got[1] != want {
+		t.Fatalf("got %q\nwant %q", got, want)
 	}
 	c.Add(time.Hour)
 	r.flush(false)
 	if got := lines(t, filepath.Join(dir, "sub")); len(got) != 2 {
 		t.Fatalf("empty hour wrote a line: %v", got)
 	}
+
+	// Card images hit the cache without a page view: an hour with only cache
+	// activity is still written. The take at the tick that ends the hour
+	// goes to the hour that is ending.
+	cache.add(0, 0, 2)
+	c.Add(time.Hour)
+	r.flush(false)
+	got = lines(t, filepath.Join(dir, "sub"))
+	want = `{"hour":"2026-10-21T18","cache":{"hits":0,"misses":0,"failures":2}}`
+	if len(got) != 3 || got[2] != want {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
 	for _, l := range lines(t, filepath.Join(dir, "sub")) {
 		if !json.Valid([]byte(l)) {
 			t.Fatalf("invalid json: %s", l)
 		}
+	}
+}
+
+// An event stamped with an hour older than the running one, from a clock
+// stepped back or a caller that read the clock just before the hour turned,
+// must not move the bucket back and split the hour into several lines.
+func TestHourOnlyMovesForward(t *testing.T) {
+	dir := t.TempDir()
+	c := &clock{t: time.Date(2026, 10, 21, 11, 0, 0, 0, time.UTC)}
+	r := New(Options{DataDir: dir, Now: c.Now})
+	r.View("track", "ios", "tm")
+	c.Set(time.Date(2026, 10, 21, 10, 59, 59, 999e6, time.UTC))
+	r.View("track", "ios", "tm")
+	r.flush(false)
+	c.Set(time.Date(2026, 10, 21, 11, 0, 1, 0, time.UTC))
+	r.View("track", "ios", "tm")
+	if got := lines(t, dir); got != nil {
+		t.Fatalf("hour 11 is still running, got %v", got)
+	}
+	c.Set(time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC))
+	r.flush(false)
+	got := lines(t, dir)
+	if len(got) != 1 || got[0] != `{"hour":"2026-10-21T11","view":{"track.ios.tm":3}}` {
+		t.Fatalf("got %v", got)
 	}
 }
 
@@ -222,6 +297,76 @@ func TestBeaconRateLimit(t *testing.T) {
 	r.lim.mu.Unlock()
 	if n != 1 {
 		t.Fatalf("limiter kept %d addresses", n)
+	}
+}
+
+func limiterSize(r *Recorder) int {
+	r.lim.mu.Lock()
+	defer r.lim.mu.Unlock()
+	return len(r.lim.hits)
+}
+
+func TestBeaconLimiterFull(t *testing.T) {
+	c := newClock()
+	r := New(Options{DataDir: t.TempDir(), Now: c.Now})
+	r.lim.max = 3
+	h := r.Beacon(false)
+	for _, ip := range []string{"203.0.113.1", "203.0.113.2", "203.0.113.3"} {
+		beacon(h, okBody, ip+":1", nil)
+	}
+	r.lim.mu.Lock()
+	swept := r.lim.lastSweep
+	r.lim.mu.Unlock()
+
+	// Full: newcomers are refused, known clients still count, and no extra
+	// sweep runs within the window.
+	c.Add(30 * time.Second)
+	for i := 0; i < 5; i++ {
+		beacon(h, okBody, "198.51.100."+string(rune('1'+i))+":1", nil)
+	}
+	beacon(h, okBody, "203.0.113.1:1", nil)
+	if n := clicks(t, r); n != 4 {
+		t.Fatalf("want 4 counted, got %d", n)
+	}
+	r.lim.mu.Lock()
+	again := r.lim.lastSweep
+	r.lim.mu.Unlock()
+	if !again.Equal(swept) || limiterSize(r) != 3 {
+		t.Fatalf("swept within the window or grew past the cap: size %d", limiterSize(r))
+	}
+
+	// Once the window is over the sweep frees room for new clients.
+	c.Add(31 * time.Second)
+	beacon(h, okBody, "198.51.100.9:1", nil)
+	if n := clicks(t, r); n != 5 {
+		t.Fatalf("newcomer refused after the sweep: %d", n)
+	}
+	if limiterSize(r) != 1 {
+		t.Fatalf("limiter kept %d addresses", limiterSize(r))
+	}
+}
+
+func TestBeaconIPv6SharesSlash64(t *testing.T) {
+	r := New(Options{DataDir: t.TempDir(), Now: newClock().Now})
+	h := r.Beacon(false)
+	// Twenty-five different addresses in one /64 share one budget.
+	for i := 0; i < 25; i++ {
+		beacon(h, okBody, fmt.Sprintf("[2001:db8:1:2::%x]:1", i+1), nil)
+	}
+	if n := clicks(t, r); n != 20 {
+		t.Fatalf("same /64: want 20, got %d", n)
+	}
+	beacon(h, okBody, "[2001:db8:1:3::a]:1", nil)
+	if n := clicks(t, r); n != 21 {
+		t.Fatalf("other /64 not counted: %d", n)
+	}
+	// IPv4-mapped addresses are plain IPv4 and keep their own budget.
+	beacon(h, okBody, "[::ffff:203.0.113.9]:1", nil)
+	if n := clicks(t, r); n != 22 {
+		t.Fatalf("mapped IPv4: %d", n)
+	}
+	if limiterSize(r) != 3 {
+		t.Fatalf("want 3 keys, got %d", limiterSize(r))
 	}
 }
 

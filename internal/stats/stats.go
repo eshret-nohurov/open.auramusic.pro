@@ -50,6 +50,7 @@ type bucket struct {
 	failed   map[string]int64
 	botView  map[string]int64
 	click    map[string]int64
+	cache    preview.Counters
 }
 
 func newBucket(hour string) *bucket {
@@ -63,8 +64,12 @@ func newBucket(hour string) *bucket {
 	}
 }
 
+// empty counts the cache too: card images are served from the preview cache
+// without a page view, so an hour with only cache activity still had
+// visitors and is worth a line. Only an hour with nothing at all is skipped.
 func (b *bucket) empty() bool {
-	return len(b.view)+len(b.notFound)+len(b.failed)+len(b.botView)+len(b.click) == 0
+	return len(b.view)+len(b.notFound)+len(b.failed)+len(b.botView)+len(b.click) == 0 &&
+		b.cache == (preview.Counters{})
 }
 
 type cacheLine struct {
@@ -123,17 +128,22 @@ func New(o Options) *Recorder {
 func (r *Recorder) hourOf(t time.Time) string { return t.UTC().Format(hourLayout) }
 
 // add counts under the lock and moves a finished hour aside first, so a count
-// made just after the hour changes never lands in the old hour's line.
+// made just after the hour changes never lands in the old hour's line. The
+// clock is read under the lock too: read before it, a caller that saw 10:59
+// could get the lock after another one moved on to 11 and drag the bucket back.
 func (r *Recorder) add(f func(b *bucket)) {
-	h := r.hourOf(r.now())
 	r.mu.Lock()
-	r.rotateLocked(h)
+	r.rotateLocked(r.hourOf(r.now()))
 	f(r.cur)
 	r.mu.Unlock()
 }
 
+// rotateLocked only moves forward. An hour older than the running one (a clock
+// stepped back) is counted in the running hour: going back would split one
+// hour into several lines with the next one in between.
 func (r *Recorder) rotateLocked(h string) {
-	if r.cur.hour == h {
+	// The layout is fixed-width, so string order is time order.
+	if h <= r.cur.hour {
 		return
 	}
 	if !r.cur.empty() {
@@ -206,11 +216,20 @@ func (r *Recorder) Run(ctx context.Context) {
 // Close writes whatever is counted so far, including the running hour.
 func (r *Recorder) Close() error { return r.flush(true) }
 
-// flush writes the finished hours, and the running one when all is set. The
-// cache counters are taken here, so they are attributed to the last hour
-// written; they are reset either way to keep every line self-contained.
+// flush writes the finished hours, and the running one when all is set.
 func (r *Recorder) flush(all bool) error {
 	r.mu.Lock()
+	// Taking the cache counters resets them, so they go into a bucket on every
+	// call and travel with it like any other count. They are added before the
+	// rotation because they were gathered in the minute leading up to now,
+	// which belongs to the running bucket rather than the one starting now.
+	// The source is a few atomic swaps, cheap enough to call under the lock.
+	if r.cache != nil {
+		c := r.cache()
+		r.cur.cache.Hits += c.Hits
+		r.cur.cache.Misses += c.Misses
+		r.cur.cache.Failures += c.Failures
+	}
 	r.rotateLocked(r.hourOf(r.now()))
 	out := r.finished
 	r.finished = nil
@@ -220,25 +239,14 @@ func (r *Recorder) flush(all bool) error {
 	}
 	r.mu.Unlock()
 
-	var c preview.Counters
-	if r.cache != nil {
-		c = r.cache()
-	}
-	if len(out) == 0 {
-		if c != (preview.Counters{}) {
-			r.log.Info("stats: cache counters without page activity",
-				"hits", c.Hits, "misses", c.Misses, "failures", c.Failures)
-		}
-		return nil
-	}
-
 	var firstErr error
-	for i, b := range out {
+	for _, b := range out {
 		l := line{
 			Hour: b.hour, View: nonEmpty(b.view), NotFound: nonEmpty(b.notFound),
 			Failed: nonEmpty(b.failed), BotView: nonEmpty(b.botView), Click: nonEmpty(b.click),
 		}
-		if i == len(out)-1 && c != (preview.Counters{}) {
+		c := b.cache
+		if c != (preview.Counters{}) {
 			l.Cache = &cacheLine{Hits: c.Hits, Misses: c.Misses, Failures: c.Failures}
 		}
 		if err := r.write(l); err != nil {

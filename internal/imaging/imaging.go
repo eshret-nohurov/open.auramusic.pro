@@ -54,7 +54,9 @@ func encodeJPEG(img image.Image, quality int) ([]byte, error) {
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	// The buffer grew by doubling; a copy of the exact size keeps the image
+	// cache's byte budget honest.
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 // cropTo returns the centred part of r with the aspect w:h, the way CSS

@@ -78,6 +78,17 @@ func (c *Cache[K, V]) Put(key K, val V) {
 	}
 }
 
+// Delete drops key if present.
+func (c *Cache[K, V]) Delete(key K) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if el, ok := c.items[key]; ok {
+		c.used -= el.Value.(*item[K, V]).cost
+		c.order.Remove(el)
+		delete(c.items, key)
+	}
+}
+
 // Len and Used are for tests and logs.
 func (c *Cache[K, V]) Len() int {
 	c.mu.Lock()

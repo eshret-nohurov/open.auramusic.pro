@@ -109,7 +109,8 @@ func serve(args []string) error {
 	go func() { errc <- hs.ListenAndServe() }()
 	log.Info("listening", "addr", cfg.ListenAddr, "mode", cfg.Mode, "version", version)
 	go probeBackend(client, log)
-	go rec.Run(ctx)
+	runDone := make(chan struct{})
+	go func() { rec.Run(ctx); close(runDone) }()
 
 	select {
 	case err := <-errc:
@@ -121,6 +122,9 @@ func serve(args []string) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	err = hs.Shutdown(shutdownCtx)
+	// Run may be in the middle of writing a finished hour; returning before it
+	// is done would lose that line.
+	<-runDone
 	if ferr := rec.Close(); ferr != nil {
 		log.Error("write stats", "err", ferr)
 	}

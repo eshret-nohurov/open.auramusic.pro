@@ -47,6 +47,7 @@ type Server struct {
 	images    *lru.Cache[string, []byte]
 	renders   singleflight.Group
 	downloads singleflight.Group
+	slots     chan struct{}
 	// fallback pictures for codes whose preview the backend failed to give.
 	fallback map[imageKind][]byte
 }
@@ -69,6 +70,7 @@ func New(o Options) (*Server, error) {
 		AllowHTTP: o.Config.AllowHTTPImages,
 		Logger:    s.log,
 	})
+	s.slots = make(chan struct{}, renderSlots)
 	s.images = lru.New[string, []byte](o.Config.ImageCacheBytes, func(b []byte) int64 { return int64(len(b)) })
 	s.fallback = map[imageKind][]byte{kindOG: s.render.DefaultCard()}
 	if s.fallback[kindCover], err = s.render.Cover(nil, imaging.Square); err != nil {

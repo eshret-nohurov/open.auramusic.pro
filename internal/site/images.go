@@ -2,6 +2,9 @@ package site
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"image"
 	"net/http"
 	"strconv"
@@ -84,7 +87,7 @@ func (s *Server) serveImage(w http.ResponseWriter, r *http.Request) {
 		card.Shape = imaging.ShapeFor(p.Type)
 	}
 
-	body, complete := s.renderImage(kind, ver, src, card)
+	body, complete := s.renderImage(kind, src, card)
 	cache := "public, max-age=86400"
 	switch {
 	case !complete:
@@ -115,16 +118,40 @@ type rendered struct {
 	complete bool
 }
 
+// renderKey names a picture by everything that goes into it. The short v
+// in URLs only has to tell one code's versions apart; this key is shared by
+// all codes, where 32 bits could collide and hand one link another's card.
+func renderKey(kind imageKind, src string, c imaging.Card) string {
+	h := sha256.New()
+	for _, p := range []string{string(kind), strconv.Itoa(int(c.Shape)), src, c.Label, c.Title, c.Artist, c.Listen, imaging.RenderVersion} {
+		// Length prefixes keep "a\nb"+"c" apart from "a"+"b\nc".
+		fmt.Fprintf(h, "%d:%s", len(p), p)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// renderSlots bounds downloads, decodes and draws running at once: a
+// decoded cover can take tens of MB, and the server is shared with the
+// main site.
+const renderSlots = 4
+
 // renderImage builds one picture per key at a time and keeps finished ones
-// in memory. A placeholder drawn because the download failed is not kept.
-func (s *Server) renderImage(kind imageKind, ver, src string, card imaging.Card) ([]byte, bool) {
-	key := string(kind) + "|" + strconv.Itoa(int(card.Shape)) + "|" + ver
+// in memory. A placeholder drawn because the download failed, or because
+// every slot stayed busy, is not kept.
+func (s *Server) renderImage(kind imageKind, src string, card imaging.Card) ([]byte, bool) {
+	key := renderKey(kind, src, card)
 	if b, ok := s.images.Get(key); ok {
 		return b, true
 	}
 	v, _, _ := s.renders.Do(key, func() (any, error) {
 		if b, ok := s.images.Peek(key); ok {
 			return rendered{b, true}, nil
+		}
+		select {
+		case s.slots <- struct{}{}:
+			defer func() { <-s.slots }()
+		case <-time.After(3 * time.Second):
+			return rendered{s.fallback[kind], false}, nil
 		}
 		var img image.Image
 		var fetchErr error

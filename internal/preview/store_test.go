@@ -3,6 +3,7 @@ package preview
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"sync"
@@ -181,5 +182,41 @@ func TestErrNotFoundWrapped(t *testing.T) {
 	f := &scripted{answers: []error{errors.Join(backend.ErrNotFound)}}
 	if r := newStore(f, c).Get(code); r.Outcome != NotFound {
 		t.Errorf("%+v", r)
+	}
+}
+
+// byCode finds one code and nothing else, until the backend goes down.
+type byCode struct {
+	found string
+	down  atomic.Bool
+}
+
+func (b *byCode) Fetch(ctx context.Context, c string) (backend.Preview, error) {
+	switch {
+	case b.down.Load():
+		return backend.Preview{}, errDown
+	case c == b.found:
+		return backend.Preview{Type: "track", Title: "x"}, nil
+	}
+	return backend.Preview{}, backend.ErrNotFound
+}
+
+func TestRandomCodesDoNotEvictPreviews(t *testing.T) {
+	c := &clock{t: time.Unix(1e9, 0)}
+	f := &byCode{found: code}
+	s := New(Options{
+		Fetcher: f, Now: c.now, MaxEntries: 10,
+		FoundTTL: time.Hour, NotFoundTTL: 10 * time.Minute, FailTTL: 15 * time.Second, StaleMax: 24 * time.Hour,
+	})
+	if r := s.Get(code); r.Outcome != Found {
+		t.Fatalf("first: %+v", r)
+	}
+	for i := range 1000 {
+		s.Get(fmt.Sprintf("Junk%012d", i))
+	}
+	c.advance(2 * time.Hour)
+	f.down.Store(true)
+	if r := s.Get(code); r.Outcome != Found || !r.Stale {
+		t.Errorf("after a flood of random codes the stale preview is gone: %+v", r)
 	}
 }

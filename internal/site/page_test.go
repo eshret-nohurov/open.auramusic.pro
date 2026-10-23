@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/imaging"
 )
 
 const (
@@ -433,5 +435,38 @@ func TestOneBackendRequestForABurst(t *testing.T) {
 	wg.Wait()
 	if n := s.mock.DeeplinkCalls.Load(); n != 1 {
 		t.Errorf("backend got %d requests", n)
+	}
+}
+
+func TestRenderKey(t *testing.T) {
+	a := imaging.Card{Title: "X\nY", Artist: "Z"}
+	b := imaging.Card{Title: "X", Artist: "Y\nZ"}
+	if renderKey(kindOG, "s", a) == renderKey(kindOG, "s", b) {
+		t.Error("fields must not run into each other")
+	}
+	if renderKey(kindCover, "s", imaging.Card{}) == renderKey(kindBg, "s", imaging.Card{}) {
+		t.Error("kinds share a key")
+	}
+	if renderKey(kindOG, "s", a) != renderKey(kindOG, "s", imaging.Card{Title: "X\nY", Artist: "Z"}) {
+		t.Error("key is not stable")
+	}
+}
+
+func TestBusyRenderGivesPlaceholder(t *testing.T) {
+	s := newTestServer(t)
+	page := body(t, do(t, s, "GET", "/s/TrackTurkmen0001"))
+	og := strings.TrimPrefix(metas(page)["og:image"], "https://open.auramusic.pro")
+	for range renderSlots {
+		s.slots <- struct{}{}
+	}
+	res := do(t, s, "GET", og)
+	if res.StatusCode != 200 || res.Header.Get("Cache-Control") != "public, max-age=60" {
+		t.Errorf("busy: %d %s", res.StatusCode, res.Header.Get("Cache-Control"))
+	}
+	for range renderSlots {
+		<-s.slots
+	}
+	if res := do(t, s, "GET", og); res.Header.Get("Cache-Control") != "public, max-age=86400" {
+		t.Errorf("after the slots freed: %s", res.Header.Get("Cache-Control"))
 	}
 }
