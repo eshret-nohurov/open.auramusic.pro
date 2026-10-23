@@ -1,0 +1,7 @@
+{
+  "type": "album",
+  "title": "<script>alert(1)</script> \"Quotes\" & 'apostrophes'",
+  "artist_name": "Tom & Jerry \"<b>bold</b>\"",
+  "thumb_url": "",
+  "artwork_url": "{{mock}}/covers/escape.jpg"
+}

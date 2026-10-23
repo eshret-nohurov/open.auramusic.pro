@@ -1,0 +1,7 @@
+{
+  "type": "album",
+  "title": "Мне не нужен",
+  "artist_name": "Navai",
+  "thumb_url": "{{mock}}/covers/album-thumb.jpg",
+  "artwork_url": "{{mock}}/covers/album.jpg"
+}

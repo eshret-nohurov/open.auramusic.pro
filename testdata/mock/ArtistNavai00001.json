@@ -1,0 +1,7 @@
+{
+  "type": "artist",
+  "title": "Navai",
+  "artist_name": "",
+  "thumb_url": "{{mock}}/covers/artist-thumb.jpg",
+  "artwork_url": "{{mock}}/covers/artist.jpg"
+}

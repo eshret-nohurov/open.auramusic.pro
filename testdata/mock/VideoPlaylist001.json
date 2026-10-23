@@ -1,0 +1,11 @@
+{
+  "type": "video_playlist",
+  "title": "",
+  "title_ru": "Лучшие клипы",
+  "title_tm": "Iň gowy klipler",
+  "artist_name": "",
+  "thumb_url": "",
+  "artwork_url": "{{mock}}/covers/video-playlist-ru.jpg",
+  "thumb_url_tm": "",
+  "artwork_url_tm": "{{mock}}/covers/video-playlist-tm.jpg"
+}

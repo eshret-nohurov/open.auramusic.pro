@@ -15,17 +15,20 @@ import (
 
 	"github.com/eshret-nohurov/open.auramusic.pro/assets"
 	"github.com/eshret-nohurov/open.auramusic.pro/internal/config"
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/preview"
 )
 
 type Options struct {
-	Config  config.Config
-	Version string
-	Logger  *slog.Logger
+	Config   config.Config
+	Version  string
+	Logger   *slog.Logger
+	Previews *preview.Store
 }
 
 type Server struct {
 	cfg       config.Config
 	version   string
+	previews  *preview.Store
 	log       *slog.Logger
 	static    *staticSet
 	wellknown map[string][]byte
@@ -34,7 +37,7 @@ type Server struct {
 }
 
 func New(o Options) (*Server, error) {
-	s := &Server{cfg: o.Config, version: o.Version, log: o.Logger}
+	s := &Server{cfg: o.Config, version: o.Version, log: o.Logger, previews: o.Previews}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}

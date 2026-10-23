@@ -1,0 +1,13 @@
+{
+  "type": "album",
+  "title": "Null meýdanlar",
+  "artist_name": null,
+  "thumb_url": null,
+  "artwork_url": "{{mock}}/covers/null.jpg",
+  "title_ru": null,
+  "id": 42,
+  "tracks_count": 12,
+  "extra": {
+    "nested": true
+  }
+}

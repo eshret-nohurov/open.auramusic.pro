@@ -1,0 +1,7 @@
+{
+  "_delay": "4s",
+  "type": "track",
+  "title": "Медленный ответ",
+  "artist_name": "Navai",
+  "artwork_url": "{{mock}}/covers/slow.jpg"
+}

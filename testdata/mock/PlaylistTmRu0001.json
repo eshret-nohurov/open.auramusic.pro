@@ -1,0 +1,11 @@
+{
+  "type": "playlist",
+  "title": "",
+  "title_ru": "Хиты недели",
+  "title_tm": "Hepdäniň hitleri",
+  "artist_name": "",
+  "thumb_url": "{{mock}}/covers/playlist-ru-thumb.jpg",
+  "artwork_url": "{{mock}}/covers/playlist-ru.jpg",
+  "thumb_url_tm": "{{mock}}/covers/playlist-tm-thumb.jpg",
+  "artwork_url_tm": "{{mock}}/covers/playlist-tm.jpg"
+}

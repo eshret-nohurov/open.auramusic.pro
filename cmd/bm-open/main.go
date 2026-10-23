@@ -1,6 +1,7 @@
 // Command bm-open serves open.auramusic.pro.
 //
 //	bm-open serve        run the site (default)
+//	bm-open mock         run the backend stub for development (127.0.0.1:3399)
 //	bm-open -version     print the build version
 package main
 
@@ -16,7 +17,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/backend"
 	"github.com/eshret-nohurov/open.auramusic.pro/internal/config"
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/mockbackend"
+	"github.com/eshret-nohurov/open.auramusic.pro/internal/preview"
 	"github.com/eshret-nohurov/open.auramusic.pro/internal/site"
 )
 
@@ -36,8 +40,10 @@ func main() {
 		fmt.Println(version)
 	case "serve":
 		err = serve(args)
+	case "mock":
+		err = mock(args)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\nusage: bm-open [serve | -version]\n", cmd)
+		fmt.Fprintf(os.Stderr, "unknown command %q\nusage: bm-open [serve | mock | -version]\n", cmd)
 		os.Exit(2)
 	}
 	if err != nil {
@@ -57,7 +63,23 @@ func serve(args []string) error {
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 
-	srv, err := site.New(site.Options{Config: cfg, Version: version, Logger: log})
+	client := backend.New(backend.Options{
+		BaseURL:     cfg.BackendBaseURL,
+		Token:       cfg.SiteToken,
+		Version:     version,
+		Timeout:     cfg.BackendTimeout,
+		MaxInflight: cfg.BackendMaxInflight,
+		Logger:      log,
+	})
+	previews := preview.New(preview.Options{
+		Fetcher:     client,
+		FoundTTL:    cfg.PreviewTTL,
+		NotFoundTTL: cfg.NotFoundTTL,
+		FailTTL:     cfg.FailTTL,
+		StaleMax:    cfg.StaleMax,
+	})
+
+	srv, err := site.New(site.Options{Config: cfg, Version: version, Logger: log, Previews: previews})
 	if err != nil {
 		return err
 	}
@@ -79,6 +101,7 @@ func serve(args []string) error {
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()
 	log.Info("listening", "addr", cfg.ListenAddr, "mode", cfg.Mode, "version", version)
+	go probeBackend(client, log)
 
 	select {
 	case err := <-errc:
@@ -96,4 +119,36 @@ func serve(args []string) error {
 	}
 	log.Info("stopped")
 	return nil
+}
+
+// probeBackend asks about a code that cannot exist. A 404 proves the URL,
+// token and IP allowlist are right; anything else is worth a line in the
+// log. The site keeps running either way: association files and /healthz
+// do not need the backend.
+func probeBackend(c *backend.Client, log *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := c.Fetch(ctx, "0000000000000000")
+	switch {
+	case err == nil, errors.Is(err, backend.ErrNotFound):
+		log.Info("backend reachable")
+	default:
+		log.Warn("backend not usable at start, pages will show the fallback screen until it is", "err", err.Error())
+	}
+}
+
+func mock(args []string) error {
+	fl := flag.NewFlagSet("mock", flag.ExitOnError)
+	addr := fl.String("addr", config.MockAddr, "listen address")
+	dir := fl.String("dir", "testdata/mock", "fixtures, one {code}.json per share code")
+	token := fl.String("token", config.MockToken, "expected bearer token")
+	fl.Parse(args)
+
+	if _, err := os.Stat(*dir); err != nil {
+		return fmt.Errorf("fixtures: %w (run from the repo root or pass -dir)", err)
+	}
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil)).With("app", "mock")
+	log.Info("backend stub listening", "addr", *addr, "fixtures", *dir)
+	hs := &http.Server{Addr: *addr, Handler: mockbackend.New(os.DirFS(*dir), *token, log), ReadHeaderTimeout: 5 * time.Second}
+	return hs.ListenAndServe()
 }
