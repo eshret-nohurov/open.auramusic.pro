@@ -48,7 +48,7 @@ func TestProdDefaults(t *testing.T) {
 	if c.BackendMaxInflight != 16 || c.ImageCacheBytes != 128<<20 || !c.TrustProxy {
 		t.Errorf("limits wrong: %+v", c)
 	}
-	if len(c.ImageHosts) != 1 || c.ImageHosts[0] != "cache.ma.st.com.tm" || c.AllowHTTPImages {
+	if len(c.ImageHosts) != 1 || c.ImageHosts[0] != "*.ma.st.com.tm" || c.AllowHTTPImages {
 		t.Errorf("image hosts = %v, http=%v", c.ImageHosts, c.AllowHTTPImages)
 	}
 }
@@ -67,7 +67,7 @@ func TestMockFillsBackend(t *testing.T) {
 }
 
 func TestProdRejectsLocalImageHosts(t *testing.T) {
-	for _, h := range []string{"127.0.0.1:3399", "localhost", "10.0.0.5", "[::1]:80", "192.168.1.1"} {
+	for _, h := range []string{"127.0.0.1:3399", "localhost", "*.localhost", "10.0.0.5", "[::1]:80", "192.168.1.1"} {
 		_, err := Parse(env(map[string]string{
 			"BACKEND_BASE_URL": "https://api.example.tm",
 			"SITE_TOKEN":       "x",
@@ -76,6 +76,21 @@ func TestProdRejectsLocalImageHosts(t *testing.T) {
 		if err == nil {
 			t.Errorf("IMAGE_HOSTS with %s accepted in prod", h)
 		}
+	}
+}
+
+func TestImageHostWildcards(t *testing.T) {
+	for _, h := range []string{"*", "*.tm", "*ma.st.com.tm", "**.ma.st.com.tm", "a.*.com.tm", "*.ma.st.*"} {
+		if _, err := Parse(env(map[string]string{"MODE": "mock", "IMAGE_HOSTS": h})); err == nil {
+			t.Errorf("IMAGE_HOSTS=%q accepted", h)
+		}
+	}
+	c, err := Parse(env(map[string]string{"MODE": "mock", "IMAGE_HOSTS": "*.MA.st.com.tm, cdn.example.com"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ImageHosts[0] != "*.ma.st.com.tm" || c.ImageHosts[1] != "cdn.example.com" {
+		t.Errorf("image hosts = %v", c.ImageHosts)
 	}
 }
 

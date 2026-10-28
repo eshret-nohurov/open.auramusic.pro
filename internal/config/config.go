@@ -36,7 +36,7 @@ type Config struct {
 	MainSiteURL        string // no trailing slash
 	BackendBaseURL     string // no trailing slash
 	SiteToken          string
-	ImageHosts         []string // host or host:port, lower case
+	ImageHosts         []string // host, host:port or *.domain for its subdomains; lower case
 	AllowHTTPImages    bool     // only in mock mode, for the local fixture server
 	PreviewTTL         time.Duration
 	NotFoundTTL        time.Duration
@@ -76,7 +76,7 @@ func Parse(lookup func(string) (string, bool)) (Config, error) {
 		MainSiteURL:        strings.TrimRight(p.str("MAIN_SITE_URL", "https://auramusic.pro"), "/"),
 		BackendBaseURL:     strings.TrimRight(p.str("BACKEND_BASE_URL", ""), "/"),
 		SiteToken:          p.str("SITE_TOKEN", ""),
-		ImageHosts:         p.list("IMAGE_HOSTS", "cache.ma.st.com.tm"),
+		ImageHosts:         p.list("IMAGE_HOSTS", "*.ma.st.com.tm"),
 		PreviewTTL:         p.duration("PREVIEW_TTL", time.Hour),
 		NotFoundTTL:        p.duration("NOT_FOUND_TTL", 10*time.Minute),
 		FailTTL:            p.duration("FAIL_TTL", 15*time.Second),
@@ -107,7 +107,7 @@ func Parse(lookup func(string) (string, bool)) (Config, error) {
 			p.fail("SITE_TOKEN is required in MODE=prod")
 		}
 		for _, h := range c.ImageHosts {
-			if isLocalHost(h) {
+			if isLocalHost(strings.TrimPrefix(h, "*.")) {
 				p.fail(fmt.Sprintf("IMAGE_HOSTS: local address %q is not allowed in MODE=prod", h))
 			}
 		}
@@ -122,6 +122,12 @@ func Parse(lookup func(string) (string, bool)) (Config, error) {
 	}
 	if len(c.ImageHosts) == 0 {
 		p.fail("IMAGE_HOSTS must list at least one host")
+	}
+	for _, h := range c.ImageHosts {
+		// "*.tm" would open a whole top-level domain.
+		if d, ok := strings.CutPrefix(h, "*."); strings.Contains(h, "*") && (!ok || strings.Contains(d, "*") || !strings.Contains(d, ".")) {
+			p.fail(fmt.Sprintf("IMAGE_HOSTS: %q: a wildcard must look like *.example.com", h))
+		}
 	}
 	if c.BackendMaxInflight < 1 {
 		p.fail("BACKEND_MAX_INFLIGHT must be at least 1")

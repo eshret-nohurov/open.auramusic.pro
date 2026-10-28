@@ -1,5 +1,5 @@
 - [Решения владельца](owner-decisions.md) — стек Go, бренд Belet Music, язык, кнопки по платформе, noindex, статистика без личных данных
 - [Git и репо](git-and-repo.md) — GitHub, коммиты на русском без ИИ, коммитить и пушить самому без вопросов
-- [API бэкенда](backend-api.md) — internal/deeplink по коду, нет docs/deeplink-api.md и токена
+- [API бэкенда](backend-api.md) — формат в docs/deeplink-api.md, адреса как у приложения, dev-токен в .env.server-dev, обложки на *.ma.st.com.tm
 - [Go на Маке](go-toolchain.md) — Go из официального архива в ~/sdk, brew не качает с ghcr.io
-- [Состояние проекта](project-status.md) — что сделано на 2026-10-23 и что ждёт владельца (тексты tm, сервер, deeplink-api.md)
+- [Состояние проекта](project-status.md) — что сделано на 2026-10-28 и что ждёт владельца (тексты tm, сервер, тестовые коды и прод от бэкенда)

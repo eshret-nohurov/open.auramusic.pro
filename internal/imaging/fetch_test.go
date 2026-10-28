@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -111,6 +112,33 @@ func TestFetchSameHostRedirect(t *testing.T) {
 	}
 	if n := e.hits.Load(); n != 2+maxRedirects+1 {
 		t.Errorf("server saw %d requests", n)
+	}
+}
+
+func TestFetchHostPatterns(t *testing.T) {
+	f := NewFetcher(FetchOptions{Hosts: []string{"*.ma.st.com.tm", "img.example.com:8443"}})
+	for host, want := range map[string]bool{
+		"storage2.ma.st.com.tm":          true,
+		"cache.ma.st.com.tm":             true,
+		"a.b.ma.st.com.tm":               true,
+		"STORAGE2.MA.ST.COM.TM":          true,
+		"img.example.com:8443":           true,
+		"img.example.com":                false,
+		"ma.st.com.tm":                   false,
+		"evilma.st.com.tm":               false,
+		"storage2.ma.st.com.tm:8443":     false,
+		"storage2.ma.st.com.tm.evil.com": false,
+		".ma.st.com.tm":                  false,
+		"a..ma.st.com.tm":                false,
+		"-a.ma.st.com.tm":                false,
+		"a_b.ma.st.com.tm":               false,
+		"evil.com/.ma.st.com.tm":         false,
+		"evil.com@x.ma.st.com.tm":        false,
+	} {
+		u := &url.URL{Scheme: "https", Host: host, Path: "/cover.webp"}
+		if got := f.check(u) == nil; got != want {
+			t.Errorf("%s: allowed=%v, want %v", host, got, want)
+		}
 	}
 }
 

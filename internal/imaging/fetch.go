@@ -30,7 +30,7 @@ var (
 )
 
 type FetchOptions struct {
-	Hosts     []string // host or host:port, lower case
+	Hosts     []string // host, host:port or *.domain for its subdomains; lower case
 	AllowHTTP bool     // mock mode only
 	Timeout   time.Duration
 	MaxBytes  int64
@@ -40,6 +40,7 @@ type FetchOptions struct {
 
 type Fetcher struct {
 	hosts     map[string]bool
+	domains   []string // ".domain" for each *.domain entry
 	allowHTTP bool
 	maxBytes  int64
 	maxDim    int
@@ -75,7 +76,12 @@ func NewFetcher(o FetchOptions) *Fetcher {
 		throttle:  throttle{last: map[string]time.Time{}},
 	}
 	for _, h := range o.Hosts {
-		f.hosts[strings.ToLower(h)] = true
+		h = strings.ToLower(h)
+		if d, ok := strings.CutPrefix(h, "*"); ok {
+			f.domains = append(f.domains, d)
+			continue
+		}
+		f.hosts[h] = true
 	}
 	f.http = &http.Client{
 		Timeout: o.Timeout,
@@ -111,10 +117,40 @@ func (f *Fetcher) check(u *url.URL) error {
 	default:
 		return errScheme
 	}
-	if u.User != nil || !f.hosts[strings.ToLower(u.Host)] {
+	if u.User != nil || !f.allowed(strings.ToLower(u.Host)) {
 		return errHost
 	}
 	return nil
+}
+
+// allowed takes a listed host as is, and for *.domain any subdomain on the
+// default port: covers live on several CDN subdomains (storage2., cache.) and
+// the backend passes the URLs through unchanged. The label check keeps an
+// escaped or odd host from slipping past the suffix match.
+func (f *Fetcher) allowed(host string) bool {
+	if f.hosts[host] {
+		return true
+	}
+	for _, d := range f.domains {
+		if sub, ok := strings.CutSuffix(host, d); ok && sub != "" && validLabels(sub) {
+			return true
+		}
+	}
+	return false
+}
+
+func validLabels(s string) bool {
+	for _, label := range strings.Split(s, ".") {
+		if label == "" || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, c := range label {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (image.Image, error) {
