@@ -105,7 +105,7 @@ open testdata/out
 
 ## Выкладка
 
-Выкладывает владелец. Сервер тот же, где `auramusic.pro` (`/opt/bm-web`, nginx + pm2).
+Выкладывает владелец. Сервер тот же, где `auramusic.pro` (`95.85.127.85`, `/opt/bm-web`, nginx + pm2 под root). Первая выкладка — 28.10.2026.
 
 ### Схема на сервере
 
@@ -122,12 +122,13 @@ open testdata/out
 1. DevOps: DNS и сертификат (текст ниже). Бэкенд (Hakim): токен сайта и allowlist IP (текст ниже).
 2. На сервере:
    ```bash
-   git clone https://github.com/eshret-nohurov/open.auramusic.pro.git /opt/bm-open
+   git clone https://gitlab.st.com.tm/eshret/open.auramusic.pro.git /opt/bm-open   # спросит логин и пароль GitLab
    cd /opt/bm-open
    cp .env.example .env && chmod 600 .env   # вписать BACKEND_BASE_URL и SITE_TOKEN
    mkdir -p data
    ```
-3. Поставить Go (ниже) или взять готовый бинарник с Мака.
+   Код на сервер идёт с GitLab. GitHub — его копия: с Мака `git push origin main` обновляет обе.
+3. Поставить Go через Nexus (ниже) или взять готовый бинарник с Мака.
 4. Первая выкладка: `deploy/release.sh`. В первый раз скрипт сам сделает
    `pm2 start deploy/ecosystem.config.cjs && pm2 save`. Чтобы pm2 поднимался
    после перезагрузки сервера, один раз выполнить `pm2 startup` (если для
@@ -140,15 +141,27 @@ open testdata/out
 
 ### Go на сервере
 
-Сборка на сервере, как у `web/` (`git pull` и сборка там). Go нужен один раз:
+Сборка идёт на сервере: `deploy/release.sh` делает `git pull` и `go build`.
+
+С сервера закрыты `proxy.golang.org` и `sum.golang.org`: вместо них отвечает сертификат `cklk.st.com.tm`, истёкший 27.07.2026. Поэтому Go и библиотеки берутся через Nexus `https://nexus.telecom.tm/repository/go-proxy`. Системный Go 1.21.3 не трогаем: другие проекты на сервере могут от него зависеть. Go 1.27.3 лежит рядом, в `/usr/local/go1.27.3`. По ссылке `/usr/local/bin/go1.27.3` старый `go` находит его сам: этого требует строка `go 1.27.3` в `go.mod`. Сам скачать новый Go старый не может, потому что проверяет его только через `sum.golang.org`.
+
+Так сделано 28.10.2026, под root:
 
 ```bash
-uname -m      # x86_64 → amd64, aarch64 → arm64
-curl -LO https://go.dev/dl/go1.27.3.linux-amd64.tar.gz     # или linux-arm64
-sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.27.3.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.profile && . ~/.profile
-go version
+cd /tmp && curl -fsSL -o go1.27.3.zip https://nexus.telecom.tm/repository/go-proxy/golang.org/toolchain/@v/v0.0.1-go1.27.3.linux-amd64.zip
+# сумма того же файла с proxy.golang.org, снята с другой машины
+echo "af4c06478303fdd1bfb335fab86c7ccb9b12e529044a946a16a1c4bcc779f8d7  go1.27.3.zip" | sha256sum -c
+python3 -m zipfile -e go1.27.3.zip /tmp/gotc
+mv /tmp/gotc/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64 /usr/local/go1.27.3
+chmod +x /usr/local/go1.27.3/bin/* /usr/local/go1.27.3/pkg/tool/linux_amd64/*
+ln -sfn /usr/local/go1.27.3/bin/go /usr/local/bin/go1.27.3
+rm -rf /tmp/gotc /tmp/go1.27.3.zip
+cd /opt/bm-open && go version      # go1.27.3
+go env -w GOPROXY=https://nexus.telecom.tm/repository/go-proxy   # только после go version: до этого go в /opt/bm-open не запустится
+go mod download
 ```
+
+Новая версия Go в `go.mod` ставится так же, со своим номером и суммой. Сумму нужно снять с `proxy.golang.org` на машине, откуда он открывается.
 
 **Без Go на сервере:** собрать на Маке и привезти бинарник.
 
@@ -251,7 +264,7 @@ cd /opt/bm-open && live/bm-open stats -days 7
 ### DevOps
 
 > Нужно для сайта ссылок «Поделиться» `open.auramusic.pro`. Он работает на сервере сайта `auramusic.pro` (`/opt/bm-web`), IP: `<IP сервера>`.
-> 1. **DNS:** A-запись `open.auramusic.pro` → `<IP>`. AAAA — только если у сервера есть IPv6 и nginx слушает его. Сейчас домен ведёт на сервер с сертификатом `cklk.st.com.tm` (истёк 27.07.2026) и отвечает 502.
+> 1. **DNS:** A-запись `open.auramusic.pro` → `<IP>`. AAAA — только если у сервера есть IPv6 и nginx слушает его. На 28.10.2026 сделано: домен ведёт на `95.85.127.85`. Но и он, и `auramusic.pro` отдают по https сертификат `cklk.st.com.tm`, истёкший 27.07.2026.
 > 2. **Сертификат** Let's Encrypt на `open.auramusic.pro` с автопродлением. Если на `auramusic.pro` ещё стоит тот же чужой просроченный — его тоже.
 > 3. **Доступ из-за границы** к порту 443 этого сервера. Его проверяют Apple (через свой CDN, иначе ссылки не открывают приложение на iPhone) и Google (App Links на Android). Ещё оттуда приходят Telegram, WhatsApp и Facebook за превью.
 > 4. **Исходящий доступ** с этого сервера к API бэкенда (dev и прод) и к CDN `storage2.ma.st.com.tm` и `cache.ma.st.com.tm`.
@@ -261,13 +274,13 @@ cd /opt/bm-open && live/bm-open stats -days 7
 
 Ответ пришёл 28.10.2026, формат по типам — [`docs/deeplink-api.md`](docs/deeplink-api.md).
 
-- `BACKEND_BASE_URL` тот же, что у приложения: dev — `devUrl`, прод — `baseUrl` из `android/config/secure-env.local.properties` (без `/api/v1`). На прод `internal/deeplink` ещё не выкачен, бэкенд сообщит.
+- `BACKEND_BASE_URL` тот же, что у приложения: dev — `devUrl`, прод — `baseUrl` из `android/config/secure-env.local.properties` (без `/api/v1`). 28.10.2026 `internal/deeplink` на проде уже работал, сайт смотрит в прод. Dev (`pn2`) отвечает на тот же токен `401 «Неверный токен»`.
 - Токен один для dev и прод, бэкенд передаёт его лично. Срока жизни нет; при смене предупредят заранее: поменять `SITE_TOKEN` в `.env` и перезапустить сайт.
 - IP `95.85.127.85` добавляют в allowlist на dev и прод. IP проверяется раньше токена: чужой IP — `403`, неверный токен — `401`. Лимита запросов на токен нет.
 - При старте сайт спрашивает код `0000000000000000` и пишет в лог `backend reachable` (бэкенд ответил `404`). Если вместо этого `403`, отправить бэкенду время этой строки из `pm2 logs bm-open`: по нему они найдут, с какого адреса пришёл запрос.
 - Строка `cover fetch failed` с `host not allowed` значит, что бэкенд прислал обложку с хоста не из `IMAGE_HOSTS`. Хост из этой строки отправить бэкенду: это старая ссылка, они её исправят.
 
-Ещё ждём: тестовые коды на dev, сообщение о выкатке на прод. После выкатки в `.env` меняется только `BACKEND_BASE_URL`.
+Ещё ждём: настоящие коды для проверки и ответ, почему dev не принимает токен (на прод это не влияет).
 
 ## Устройство кода
 
